@@ -1,99 +1,42 @@
 #pragma once
-
-#include <cstdlib>
-#include <type_traits>
 #include <concepts>
-#include <utility>
 
-namespace axm
+namespace AXM 
 {
-    namespace util 
+template <typename T>
+concept Callable = requires(T t) {
+    { t() };
+};
+
+template <typename FuncType>
+    requires Callable<FuncType>
+class TScopeGuard
+{
+    FuncType _f;
+
+    TScopeGuard(TScopeGuard&&) = delete;
+    TScopeGuard(const TScopeGuard&) = delete;
+    TScopeGuard& operator=(TScopeGuard&&) = delete;
+    TScopeGuard& operator=(const TScopeGuard&) = delete;
+
+
+public:
+
+    ~TScopeGuard() { _f(); }
+    explicit TScopeGuard(FuncType InFunc) : _f(InFunc) {}
+};
+
+struct FScopeGuardSyntaxSupport
+{
+    template <typename FuncType>
+    TScopeGuard<FuncType> operator+(FuncType&& InFunc)
     {
-        /*
-            ScopeExit is a general-purpose scope guard that calls its exit function when a scope is exited.
-            The class templates ScopeFail and ScopeSuccess share the ScopeExit interface, only the situation
-            when the exit function is called differs.
-        */
-
-        template<typename EF>
-        class ScopeExit;
-
-        template<typename EF>
-        class ScopeFail;
-
-        template<typename EF>
-        class ScopeSuccess;
-
-        template<typename R, typename D>
-        class UniqueResource;
-
-        template<typename R, typename D, typename S = std::decay<R>>
-        UniqueResource<std::decay_t<R>, std::decay_t<D>>
-        MakeUniqueResourceChecked(R&& r, const S& invalid, D&& d) noexcept;
-
-        /*
-            NOTE:
-            If the exit function object of a ScopeSuccess or ScopeExit object refers to a local variable
-            of the function where it is defined (e.g., as a lambda capturing the variable by reference),
-            and that variable is used as a return operand in that function, that variable might have
-            already been returned when the scope guard’s destructor executes. This can lead to surprising
-            behavior.
-        */
-
-        template<typename EF>
-        class ScopeExit
-        {
-        private:
-            EF   ExitFunction;
-            bool ExecuteOnDestruction{ true };
-
-        public:
-            template<typename EFP>
-            requires std::is_nothrow_constructible_v<EF, EFP> ||
-                    std::is_nothrow_constructible_v<EF, EFP&>
-            explicit ScopeExit(EFP&& callable) noexcept;
-
-            explicit ScopeExit(ScopeExit&& rhs) noexcept;
-
-            ~ScopeExit() noexcept;
-
-            void Release() noexcept;
-
-            ScopeExit(const ScopeExit&)            = delete;
-            ScopeExit& operator=(const ScopeExit&) = delete;
-            ScopeExit& operator=(ScopeExit&&)      = delete;
-        };
+        return TScopeGuard<FuncType>((FuncType&&)InFunc);
     }
+};
 
-    namespace util
-    {
-        template<typename EF>
-        template<typename EFP>
-        requires std::is_nothrow_constructible_v<EF, EFP> ||
-                std::is_nothrow_constructible_v<EF, EFP&>
-        ScopeExit<EF>::ScopeExit(EFP&& callable) noexcept
-            : ExitFunction(std::forward<EFP>(callable))
-        {
-        }
+#define PRIVATE_SCOPE_EXIT_JOIN(A, B) PRIVATE_SCOPE_EXIT_JOIN_INNER(A, B)
+#define PRIVATE_SCOPE_EXIT_JOIN_INNER(A, B) A##B
 
-        template<typename EF>
-        util::ScopeExit<EF>::ScopeExit(ScopeExit&& rhs) noexcept
-            : ExitFunction(std::move(rhs.ExitFunction))
-        {
-            rhs.ExecuteOnDestruction = false;
-        }
-
-        template<typename EF>
-        util::ScopeExit<EF>::~ScopeExit() noexcept
-        {
-            if (ExecuteOnDestruction)
-                ExitFunction();
-        }
-
-        template<typename EF>
-        void util::ScopeExit<EF>::Release() noexcept
-        {
-            ExecuteOnDestruction = false;
-        }
-    }
+#define ON_SCOPE_EXIT const auto PRIVATE_SCOPE_EXIT_JOIN(ScopeGuard_, __LINE__) = FScopeGuardSyntaxSupport() + [&]() -> void
 }
